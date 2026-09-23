@@ -1,12 +1,13 @@
 """Tests for :mod:`Products.ExportImport.utils`."""
 
 import unittest
+from StringIO import StringIO
 
 import Missing
 from DateTime import DateTime
 from Persistence import PersistentMapping
 
-from Products.ExportImport.utils import datetime_to_iso, dumps, json_compatible, safe_unicode
+from Products.ExportImport.utils import datetime_to_iso, dump, dumps, json_compatible, safe_unicode
 
 
 class TestDatetimeToIso(unittest.TestCase):
@@ -70,6 +71,12 @@ class TestDumps(unittest.TestCase):
 
     def test_sorted_and_indented(self):
         self.assertEqual(dumps({'b': 1, 'a': 2}), '{\n    "a": 2,\n    "b": 1\n}')
+
+    def test_dump_matches_dumps(self):
+        data = {'b': [1, {'y': u'\xe9', 'x': None}], 'a': 'text'}
+        handle = StringIO()
+        dump(data, handle)
+        self.assertEqual(handle.getvalue(), dumps(data))
 
 
 def test_suite():

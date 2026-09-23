@@ -92,12 +92,32 @@ def json_compatible(value, encoding=DEFAULT_CHARSET):
     return safe_unicode(str(value), encoding)
 
 
+JSON_OPTIONS = {
+    'sort_keys': True,
+    'indent': 4,
+    # simplejson 2.0.9 defaults to ', ', leaving a trailing space on every
+    # line once ``indent`` is set.
+    'separators': (',', ': '),
+}
+
+
+def dump(data, handle):
+    """Write ``data`` to ``handle`` exactly as :func:`dumps` formats it.
+
+    Streams the encoder's chunks instead of building the whole document in
+    memory first -- for an item with a large file inlined, that string is as
+    big as the file's base64 data.
+
+    :param data: a JSON-compatible structure
+    :param handle: a file open for writing
+    """
+    json.dump(data, handle, **JSON_OPTIONS)
+
+
 def dumps(data):
     """Serialize ``data`` the way collective.exportimport writes its files.
 
     :param data: a JSON-compatible structure
     :returns: an ASCII ``str``
     """
-    # simplejson 2.0.9 defaults to ', ', leaving a trailing space on every
-    # line once ``indent`` is set.
-    return json.dumps(data, sort_keys=True, indent=4, separators=(',', ': '))
+    return json.dumps(data, **JSON_OPTIONS)

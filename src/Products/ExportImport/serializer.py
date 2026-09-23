@@ -148,11 +148,16 @@ class Serializer:
             chunks.append(data.data)
             data = data.next
         payload = ''.join(chunks)
+        # Files run to hundreds of megabytes: drop every copy as soon as the
+        # next one exists, so no more than two are alive at once.
+        del chunks
         if not payload:
             return None
+        encoded = base64.b64encode(payload)
+        del payload
         return {
             'content-type': self.text(field.getContentType(obj)),
-            'data': base64.encodestring(payload).replace('\n', ''),
+            'data': encoded,
             'encoding': u'base64',
             'filename': self.text(field.getFilename(obj)),
         }

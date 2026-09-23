@@ -24,7 +24,7 @@ from Products.CMFCore.utils import getToolByName
 
 from Products.ExportImport import config
 from Products.ExportImport.serializer import Serializer
-from Products.ExportImport.utils import dumps, json_compatible
+from Products.ExportImport.utils import dump, json_compatible
 
 logger = logging.getLogger('Products.ExportImport')
 
@@ -42,7 +42,7 @@ def _write_json(path, data):
     """
     handle = open(path, 'wb')
     try:
-        handle.write(dumps(data))
+        dump(data, handle)
     finally:
         handle.close()
 
@@ -134,6 +134,22 @@ class SiteExporter:
         logger.warning('Could not export %s: %s', path, message)
         self.errors.append({'path': path, 'message': str(message)})
 
+    def release_memory(self):
+        """Trim the ZODB object cache back to its configured size.
+
+        Nothing else does during an export: the pickle cache is only garbage
+        collected at transaction boundaries, and an export never commits. So
+        every ``Pdata`` chunk of every file stays in memory, and a site with
+        gigabytes of files runs the process out of memory.
+
+        Objects still referenced (the cached :meth:`objects` list) are turned
+        back into ghosts and reload on the next access; modified ones are
+        never touched.
+        """
+        jar = getattr(aq_base(self.portal), '_p_jar', None)
+        if jar is not None:
+            jar.cacheGC()
+
     def export_content(self):
         """Write one ``N.json`` file per content item.
 
@@ -152,6 +168,8 @@ class SiteExporter:
                 continue
             counter += 1
             _write_json(os.path.join(self.site_dir, '%d.json' % counter), data)
+            del data
+            self.release_memory()
         if self.errors:
             _write_json(
                 os.path.join(self.site_dir, config.ERRORS_FILENAME),

@@ -5,7 +5,7 @@ import shutil
 import tempfile
 import unittest
 
-from Products.ExportImport.exporter import export_site
+from Products.ExportImport.exporter import SiteExporter, export_site
 from Products.ExportImport.tests.base import ExportImportTestCase
 from Products.ExportImport.utils import json
 
@@ -62,6 +62,24 @@ class TestExporter(ExportImportTestCase):
         export_site(self.portal, base_dir=self.base_dir)
         self.failIf(os.path.exists(stale))
         self.failUnless(os.path.exists(other))
+
+    def test_cache_is_trimmed_after_each_item(self):
+        exporter = SiteExporter(self.portal, base_dir=self.base_dir)
+        calls = []
+        jar = self.portal._p_jar
+        original = jar.cacheGC
+
+        def counting_gc():
+            calls.append(1)
+            return original()
+
+        jar.cacheGC = counting_gc
+        try:
+            items = exporter()['items']
+        finally:
+            del jar.cacheGC
+        self.failUnless(items > 0)
+        self.assertEqual(len(calls), items)
 
     def test_ordering(self):
         export_site(self.portal, base_dir=self.base_dir)
