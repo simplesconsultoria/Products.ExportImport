@@ -45,6 +45,33 @@ The output is meant for `collective.exportimport`'s importer on Plone 6. Fields
 use their Dexterity names (`subjects`, `created`, `exclude_from_nav`, ...) and
 files and images are inlined as base64. Reference fields are left out.
 
+Every string is valid for strict JSON parsers such as `orjson`: bytes that are
+not valid in the site charset, and UTF-16 surrogates without their pair, are
+replaced with U+FFFD.
+
+### Binaries in rich text fields
+
+Archetypes 1.3 lets a file be uploaded into a rich text field. When a rich
+text field holds a content type other than `text/*`, the export does not
+decode it as text. Instead, it:
+
+1. Writes a new `Image` (for `image/*`) or `File` item **inside** the item,
+   with id and title `image.<ext>` or `file.<ext>`. The extension comes from
+   the filename stored in the field, falling back to the content type (Word
+   files, for instance, are stored as `application/zip`).
+2. Gives it the UID `md5("<item UID>:<field name>")`, which stays the same
+   across exports.
+3. Copies the item's dates, creators, review state and workflow history.
+4. Numbers it right after the item, and lists it in `export_ordering.json`.
+5. Replaces the field with a link to it: `resolveuid/<uid>/@@download/file`
+   for a File, an `<img>` with `resolveuid/<uid>/@@images/image` for an Image.
+
+The importing site must have folderish `Document` and `Event` types, as with
+`plone.volto`. The export summary reports how many items were extracted.
+
+Memory stays bounded on large sites: the ZODB cache is trimmed after each item,
+and items are streamed to disk.
+
 ## Development
 
 Everything runs in the `plone/plone:2.1-demo` image (Python 2.4.6, Zope 2.8.12,
