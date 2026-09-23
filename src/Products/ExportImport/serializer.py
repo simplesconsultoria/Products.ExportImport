@@ -9,9 +9,21 @@ Dexterity field names, base64-inlined binaries and site-relative ``@id``s.
 Field dispatch replaces the zope.component adapters with an ``isinstance``
 chain. Order matters: in Archetypes 1.3 both ``ImageField`` and ``TextField``
 subclass ``FileField``.
+
+A rich text field can also hold a binary: Archetypes 1.3 lets a file be
+uploaded into it. :meth:`Serializer.items` exports such a binary as a File or
+Image inside the item, and replaces the text with a link to it.
 """
 
 import base64
+import cgi
+import mimetypes
+import os
+
+try:
+    from hashlib import md5
+except ImportError:  # Python 2.4
+    from md5 import new as md5
 
 from Acquisition import aq_base, aq_inner, aq_parent
 from Products.Archetypes.Field import FileField, ImageField, ReferenceField, TextField
@@ -162,13 +174,32 @@ class Serializer:
             'filename': self.text(field.getFilename(obj)),
         }
 
+    def is_binary_text(self, field, obj):
+        """Tell whether a rich text field holds an uploaded binary, not text.
+
+        :param field: an Archetypes ``TextField`` with a rich widget
+        :param obj: the content object
+        :returns: bool
+        """
+        content_type = field.getContentType(obj) or ''
+        if content_type.startswith('text/'):
+            return False
+        if content_type in config.TEXT_CONTENT_TYPES:
+            return False
+        return bool(field.getRaw(obj))
+
     def rich_text(self, field, obj):
         """Serialize a TextField with a rich widget as a Plone 6 RichText value.
 
+        A binary in the field is left out here (None): decoded as text it is
+        garbage. :meth:`items` exports it as an item of its own.
+
         :param field: an Archetypes ``TextField``
         :param obj: the content object
-        :returns: dict
+        :returns: dict, or None for a binary
         """
+        if self.is_binary_text(field, obj):
+            return None
         return {
             'content-type': self.text(field.getContentType(obj)),
             'data': self.text(field.getRaw(obj)),
@@ -261,6 +292,113 @@ class Serializer:
         layout = item.get('layout')
         if item.get('is_folderish') and layout in config.LISTING_VIEW_MAPPING:
             item['layout'] = config.LISTING_VIEW_MAPPING[layout]
+
+    def binary_text_extension(self, field, obj):
+        """Return the file extension for a binary stored in a rich text field.
+
+        Taken from the field's filename when it has one -- the content type
+        alone can mislead: Word files are stored as ``application/zip``.
+
+        :param field: an Archetypes ``TextField``
+        :param obj: the content object
+        :returns: lowercase extension, without the dot
+        """
+        filename = field.getFilename(obj) or ''
+        extension = os.path.splitext(filename)[1][1:].lower()
+        if extension and extension.isalnum():
+            return extension
+        content_type = field.getContentType(obj)
+        if content_type in config.BINARY_TEXT_EXTENSIONS:
+            return config.BINARY_TEXT_EXTENSIONS[content_type]
+        guessed = mimetypes.guess_extension(content_type or '')
+        if guessed:
+            return guessed[1:]
+        return 'bin'
+
+    def binary_text_item(self, field, obj, item):
+        """Build a File or Image item from the binary in a rich text field.
+
+        The new item lives inside ``obj`` as ``file.<ext>`` or
+        ``image.<ext>``, with a UID derived from the UID of ``obj`` (the same
+        one on every export) and the workflow state, history and dates of
+        ``obj``. The field in ``item`` is replaced, in place, by an HTML link
+        to it.
+
+        :param field: an Archetypes ``TextField`` holding a binary
+        :param obj: the content object
+        :param item: the serialized ``obj``, as returned by :meth:`__call__`
+        :returns: dict, the new item
+        """
+        content_type = field.getContentType(obj)
+        if content_type.startswith('image/'):
+            portal_type, kind, layout = 'Image', 'image', 'image_view'
+        else:
+            portal_type, kind, layout = 'File', 'file', 'file_view'
+        name = u'%s.%s' % (kind, self.text(self.binary_text_extension(field, obj)))
+        uid = u'%s' % md5('%s:%s' % (str(item['UID']), field.getName())).hexdigest()
+        filename = self.text(field.getFilename(obj)) or name
+
+        if kind == 'image':
+            html = u'<p><img src="resolveuid/%s/@@images/image" alt="%s" /></p>' % (
+                uid, cgi.escape(item.get('title') or u'', True))
+        else:
+            html = u'<p><a href="resolveuid/%s/@@download/file">%s</a></p>' % (
+                uid, cgi.escape(filename, True))
+        item[field.getName()] = {
+            'content-type': u'text/html',
+            'data': html,
+            'encoding': u'utf-8',
+        }
+
+        fti = self.types_tool.getTypeInfo(portal_type)
+        new = {
+            '@id': u'%s/%s' % (item['@id'], name),
+            '@type': self.text(portal_type),
+            'UID': uid,
+            'id': name,
+            'title': name,
+            'description': u'',
+            'subjects': [],
+            'allow_discussion': False,
+            'exclude_from_nav': False,
+            'is_folderish': False,
+            'layout': self.text(layout),
+            'lock': {},
+            'parent': self.summary(obj),
+            'type_title': fti and self.text(fti.Title()) or None,
+            'version': u'current',
+            'working_copy': None,
+            'working_copy_of': None,
+            kind: {
+                'content-type': self.text(content_type),
+                'data': base64.b64encode(field.getRaw(obj)),
+                'encoding': u'base64',
+                'filename': filename,
+            },
+        }
+        for key in ('created', 'modified', 'effective', 'expires', 'creators',
+                    'contributors', 'language', 'rights', 'review_state',
+                    'workflow_history'):
+            if key in item:
+                new[key] = item[key]
+        return new
+
+    def items(self, obj):
+        """Serialize ``obj``, plus one item per binary in its rich text fields.
+
+        :param obj: an Archetypes content object inside the site
+        :returns: list of dicts, ``obj`` first
+        """
+        item = self(obj)
+        result = [item]
+        for field in obj.Schema().fields():
+            if not isinstance(field, TextField) or not isinstance(field.widget, RichWidget):
+                continue
+            if 'r' not in field.mode or not field.checkPermission('r', obj):
+                continue
+            if self.is_binary_text(field, obj):
+                result.append(self.binary_text_item(field, obj, item))
+        return result
 
     def __call__(self, obj):
         """Serialize ``obj``.

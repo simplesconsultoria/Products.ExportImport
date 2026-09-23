@@ -54,6 +54,7 @@ def main(app):
     portal_types = [t.strip() for t in types.split(',') if t.strip()]
     summary = export_site(site, portal_types=portal_types or None)
     print('exported %(items)d items (%(errors)d errors) to %(site_dir)s' % summary)
+    print('extracted from rich text: %(extracted)d items' % summary)
     print('ordering: %(ordering)s' % summary)
     print('local roles: %(localroles)s' % summary)
     return 0

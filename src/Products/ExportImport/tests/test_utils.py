@@ -67,6 +67,20 @@ class TestJsonCompatible(unittest.TestCase):
         self.assertEqual(json_compatible(Custom()), u'custom')
 
 
+class TestSurrogates(unittest.TestCase):
+
+    def test_lone_surrogate_is_replaced(self):
+        self.assertEqual(safe_unicode('\xed\xa0\x80abc'), u'\ufffdabc')
+        self.assertEqual(safe_unicode('abc\xed\xb0\x80'), u'abc\ufffd')
+
+    def test_valid_pair_is_kept(self):
+        smiley = '\xf0\x9f\x98\x80'
+        self.assertEqual(safe_unicode(smiley), unicode(smiley, 'utf-8'))
+
+    def test_json_has_no_lone_surrogate(self):
+        self.failIf('\\ud800' in dumps(safe_unicode('\xed\xa0\x80')))
+
+
 class TestDumps(unittest.TestCase):
 
     def test_sorted_and_indented(self):
@@ -81,6 +95,6 @@ class TestDumps(unittest.TestCase):
 
 def test_suite():
     suite = unittest.TestSuite()
-    for case in (TestDatetimeToIso, TestSafeUnicode, TestJsonCompatible, TestDumps):
+    for case in (TestDatetimeToIso, TestSafeUnicode, TestJsonCompatible, TestSurrogates, TestDumps):
         suite.addTest(unittest.makeSuite(case))
     return suite

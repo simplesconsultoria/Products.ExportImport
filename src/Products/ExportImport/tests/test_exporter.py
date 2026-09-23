@@ -6,7 +6,7 @@ import tempfile
 import unittest
 
 from Products.ExportImport.exporter import SiteExporter, export_site
-from Products.ExportImport.tests.base import ExportImportTestCase
+from Products.ExportImport.tests.base import GIF, ExportImportTestCase
 from Products.ExportImport.utils import json
 
 
@@ -92,6 +92,16 @@ class TestExporter(ExportImportTestCase):
         sorted_orders = orders[:]
         sorted_orders.sort()
         self.assertEqual(orders, sorted_orders)
+
+    def test_binary_text_is_written_after_its_item(self):
+        self.document.setText(GIF, mimetype='image/gif', filename='pixel.gif')
+        summary = export_site(self.portal, base_dir=self.base_dir)
+        self.assertEqual(summary['extracted'], 1)
+        ids = [item['@id'] for item in self.items()]
+        self.assertEqual(ids[ids.index(u'/page') + 1], u'/page/image.gif')
+        ordering = read_json(os.path.join(self.base_dir, 'export_ordering.json'))
+        extracted = self.items()[ids.index(u'/page/image.gif')]
+        self.failUnless({'uuid': extracted['UID'], 'order': 0} in ordering)
 
     def test_localroles(self):
         self.folder_obj.manage_setLocalRoles('someone', ['Reviewer'])

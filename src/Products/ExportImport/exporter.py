@@ -11,7 +11,9 @@
         export_localroles.json
 
 Items are numbered in path order, so every container is written before its
-contents -- which is what the importer relies on. Plone 2.1's path index
+contents -- which is what the importer relies on. A binary found in a rich
+text field is written as an item of its own, numbered right after the item
+that held it (see :meth:`Serializer.items`). Plone 2.1's path index
 cannot be used as a catalog ``sort_on``, so the sort happens here.
 """
 
@@ -90,6 +92,7 @@ class SiteExporter:
         self.portal_types = portal_types
         self.serializer = Serializer(portal)
         self.errors = []
+        self.extracted = []
         self._objects = None
 
     def objects(self):
@@ -161,14 +164,18 @@ class SiteExporter:
         counter = 0
         for path, obj in self.objects():
             try:
-                data = self.serializer(obj)
+                items = self.serializer.items(obj)
             except Exception:
                 logger.exception('Serializing %s failed', path)
                 self.error(path, sys.exc_info()[1])
                 continue
-            counter += 1
-            _write_json(os.path.join(self.site_dir, '%d.json' % counter), data)
-            del data
+            for data in items:
+                counter += 1
+                _write_json(os.path.join(self.site_dir, '%d.json' % counter), data)
+            for data in items[1:]:
+                logger.info('Extracted %s from the rich text of %s', data['@id'], path)
+                self.extracted.append(data['UID'])
+            del items, data
             self.release_memory()
         if self.errors:
             _write_json(
@@ -192,6 +199,9 @@ class SiteExporter:
             except (AttributeError, ValueError):
                 continue
             result.append({'uuid': obj.UID(), 'order': order})
+        # Items extracted from rich text are the only child of their container.
+        for uid in self.extracted:
+            result.append({'uuid': uid, 'order': 0})
         result.sort(lambda a, b: cmp(a['order'], b['order']))
         return json_compatible(result)
 
@@ -242,6 +252,7 @@ class SiteExporter:
         return {
             'site_dir': self.site_dir,
             'items': items,
+            'extracted': len(self.extracted),
             'errors': len(self.errors),
             'ordering': ordering_path,
             'localroles': localroles_path,

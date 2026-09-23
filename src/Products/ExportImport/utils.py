@@ -12,6 +12,8 @@ try:
 except ImportError:  # Python >= 2.6
     import json
 
+import re
+
 import Missing
 from DateTime import DateTime
 from Persistence import PersistentMapping
@@ -23,6 +25,13 @@ except ImportError:
 
 DEFAULT_CHARSET = 'utf-8'
 
+# A UTF-16 surrogate without its other half. Python 2 decodes UTF-8-encoded
+# surrogates (``\xed\xa0\x80``) without complaint and simplejson escapes
+# them as ``\ud800``, which strict parsers such as orjson reject.
+LONE_SURROGATE = re.compile(
+    u'[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]'
+)
+
 SEQUENCE_TYPES = (list, tuple, set, frozenset, PersistentList)
 MAPPING_TYPES = (dict, PersistentMapping)
 
@@ -32,14 +41,15 @@ def safe_unicode(value, encoding=DEFAULT_CHARSET):
 
     Plone 2.1 stores text as byte strings in the site charset. Bytes that are
     not valid in that charset are replaced rather than raising, so one bad
-    value cannot abort an export.
+    value cannot abort an export; so are unpaired surrogates, so the result
+    always encodes to valid JSON.
 
     :param value: any value
     :param encoding: charset of byte strings
     :returns: unicode for ``str`` input, ``value`` unchanged otherwise
     """
     if isinstance(value, str):
-        return unicode(value, encoding, 'replace')
+        return LONE_SURROGATE.sub(u'\ufffd', unicode(value, encoding, 'replace'))
     return value
 
 

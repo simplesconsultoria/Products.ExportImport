@@ -48,6 +48,22 @@ CONSTRAIN_FIELDS = (
 # ATContentTypes ``ENABLED`` constrain mode.
 CONSTRAIN_ENABLED = 1
 
+# Rich text holding one of these content types is text; anything else is a
+# binary uploaded into the field, exported as a File or Image of its own.
+TEXT_CONTENT_TYPES = ('application/xhtml+xml',)
+
+# Extension for a binary extracted from rich text when the field has no
+# filename to take it from (``mimetypes`` gives ``.jpe`` for JPEG on 2.4).
+BINARY_TEXT_EXTENSIONS = {
+    'application/msword': 'doc',
+    'application/pdf': 'pdf',
+    'application/zip': 'zip',
+    'audio/mpeg': 'mp3',
+    'image/gif': 'gif',
+    'image/jpeg': 'jpg',
+    'image/png': 'png',
+}
+
 # Old (AT) layout -> Plone 6 layout, for folders and collections.
 # Copied from plone.app.contenttypes via collective.exportimport.
 LISTING_VIEW_MAPPING = {

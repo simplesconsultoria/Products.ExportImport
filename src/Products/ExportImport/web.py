@@ -31,6 +31,7 @@ RESULT = """<html><head><title>Export finished</title></head><body>
 <h1>Export finished</h1>
 <ul>
 <li>Items: %(items)d, errors: %(errors)d</li>
+<li>Extracted from rich text: %(extracted)d</li>
 <li>Content: <code>%(site_dir)s</code></li>
 <li>Ordering: <code>%(ordering)s</code></li>
 <li>Local roles: <code>%(localroles)s</code></li>

@@ -4,7 +4,7 @@ import base64
 import re
 import unittest
 
-from Products.ExportImport.serializer import Serializer
+from Products.ExportImport.serializer import Serializer, md5
 from Products.ExportImport.tests.base import GIF, ExportImportTestCase
 from Products.ExportImport.utils import dumps
 
@@ -117,7 +117,80 @@ class TestSerializer(ExportImportTestCase):
             dumps(self.serialize(obj))
 
 
+class TestBinaryText(ExportImportTestCase):
+    """A file uploaded into a rich text field becomes an item of its own."""
+
+    def afterSetUp(self):
+        ExportImportTestCase.afterSetUp(self)
+        self.serializer = Serializer(self.portal)
+
+    def items(self, data, mimetype, filename=None):
+        self.document.setText(data, mimetype=mimetype, filename=filename)
+        return self.serializer.items(self.document)
+
+    def expected_uid(self):
+        return md5('%s:text' % self.document.UID()).hexdigest()
+
+    def test_text_document_has_no_extra_items(self):
+        self.assertEqual(len(self.serializer.items(self.document)), 1)
+
+    def test_image_is_extracted(self):
+        item, image = self.items(GIF, 'image/gif', 'pixel.gif')
+        uid = self.expected_uid()
+        self.assertEqual(image['@type'], u'Image')
+        self.assertEqual(image['@id'], u'/page/image.gif')
+        self.assertEqual(image['id'], u'image.gif')
+        self.assertEqual(image['title'], u'image.gif')
+        self.assertEqual(image['UID'], uid)
+        self.assertEqual(image['layout'], u'image_view')
+        self.assertEqual(base64.decodestring(image['image']['data']), GIF)
+        self.assertEqual(image['image']['encoding'], u'base64')
+        self.assertEqual(image['image']['content-type'], u'image/gif')
+        self.assertEqual(image['image']['filename'], u'pixel.gif')
+        self.assertEqual(image['parent']['@id'], u'/page')
+        self.assertEqual(image['parent']['UID'], self.document.UID())
+        self.assertEqual(item['text']['content-type'], u'text/html')
+        self.failUnless(
+            u'src="resolveuid/%s/@@images/image"' % uid in item['text']['data'],
+            item['text']['data'])
+
+    def test_file_is_extracted_with_the_filename_extension(self):
+        item, extracted = self.items('PK\x03\x04 fake docx', 'application/zip',
+                                     'Pauta 2015.docx')
+        uid = self.expected_uid()
+        self.assertEqual(extracted['@type'], u'File')
+        self.assertEqual(extracted['@id'], u'/page/file.docx')
+        self.assertEqual(extracted['layout'], u'file_view')
+        self.assertEqual(extracted['file']['filename'], u'Pauta 2015.docx')
+        self.assertEqual(base64.decodestring(extracted['file']['data']),
+                         'PK\x03\x04 fake docx')
+        self.failUnless(
+            u'<a href="resolveuid/%s/@@download/file">Pauta 2015.docx</a>' % uid
+            in item['text']['data'], item['text']['data'])
+
+    def test_extension_from_content_type_without_filename(self):
+        extracted = self.items('%PDF-1.4 fake', 'application/pdf')[1]
+        self.assertEqual(extracted['id'], u'file.pdf')
+
+    def test_metadata_is_inherited(self):
+        item, extracted = self.items(GIF, 'image/gif', 'pixel.gif')
+        for key in ('created', 'modified', 'effective', 'creators',
+                    'review_state', 'workflow_history'):
+            self.assertEqual(extracted[key], item[key], key)
+
+    def test_uid_is_stable(self):
+        first = self.items(GIF, 'image/gif', 'pixel.gif')[1]['UID']
+        second = self.serializer.items(self.document)[1]['UID']
+        self.assertEqual(first, second)
+        self.assertEqual(len(first), 32)
+
+    def test_json_serializable(self):
+        for item in self.items('\xed\xa0\x80\xff', 'application/octet-stream'):
+            dumps(item)
+
+
 def test_suite():
     suite = unittest.TestSuite()
     suite.addTest(unittest.makeSuite(TestSerializer))
+    suite.addTest(unittest.makeSuite(TestBinaryText))
     return suite
