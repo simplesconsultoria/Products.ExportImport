@@ -206,6 +206,21 @@ class Serializer:
             'encoding': u'utf-8',
         }
 
+    def is_html(self, field, obj):
+        """Tell whether a TextField holds HTML, whatever its widget.
+
+        HTML means the content type stored for ``obj`` is ``text/html``, or
+        ``text/html`` is one of the field's allowable content types.
+
+        :param field: an Archetypes ``TextField``
+        :param obj: the content object
+        :returns: bool
+        """
+        if field.getContentType(obj) == 'text/html':
+            return True
+        allowed = getattr(field, 'allowable_content_types', None) or ()
+        return 'text/html' in allowed
+
     def field_value(self, field, obj):
         """Serialize one field, dispatching on its class.
 
@@ -216,7 +231,7 @@ class Serializer:
         if isinstance(field, ImageField):
             return self.binary(field, obj)
         if isinstance(field, TextField):
-            if isinstance(field.widget, RichWidget):
+            if isinstance(field.widget, RichWidget) or self.is_html(field, obj):
                 return self.rich_text(field, obj)
             return self.text(field.getRaw(obj))
         if isinstance(field, FileField):
