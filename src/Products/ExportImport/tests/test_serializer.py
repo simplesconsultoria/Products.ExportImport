@@ -1,6 +1,7 @@
 """Tests for :mod:`Products.ExportImport.serializer`."""
 
 import base64
+import copy
 import re
 import unittest
 
@@ -61,6 +62,30 @@ class TestSerializer(ExportImportTestCase):
     def test_plain_text_field_is_a_string(self):
         item = self.serialize(self.document)
         self.assertEqual(item['description'], u'Plain description')
+
+    def test_html_in_a_field_without_rich_widget_is_rich_text(self):
+        # description has a TextArea widget; the stored content type is HTML.
+        self.document.setDescription('<p>Ol\xc3\xa1</p>', mimetype='text/html')
+        description = self.serialize(self.document)['description']
+        self.failUnless(isinstance(description, dict), description)
+        self.assertEqual(description['content-type'], u'text/html')
+        self.assertEqual(description['encoding'], u'utf-8')
+        self.failUnless(u'Ol\xe1' in description['data'], description['data'])
+
+    def test_plain_text_in_a_field_without_rich_widget_is_a_string(self):
+        self.document.setDescription('Plain text', mimetype='text/plain')
+        self.assertEqual(self.serialize(self.document)['description'],
+                         u'Plain text')
+
+    def test_field_allowing_html_is_rich_text(self):
+        # A copy of the field, so the shared schema is not changed.
+        field = copy.copy(self.document.getField('description'))
+        field.allowable_content_types = ('text/plain', 'text/html')
+        value = Serializer(self.portal).field_value(field, self.document)
+        self.failUnless(isinstance(value, dict), value)
+        self.assertEqual(value['content-type'], u'text/plain')
+        self.assertEqual(value['encoding'], u'utf-8')
+        self.assertEqual(value['data'], u'Plain description')
 
     def test_image_is_inlined_as_base64(self):
         image = self.serialize(self.image)['image']
